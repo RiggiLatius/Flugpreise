@@ -1,17 +1,15 @@
-name: Flugpreis-Tracker FRA-MEL
+name: Flugpreis-Tracker Open-Jaw FRA-MEL / CHC-FRA
 
 on:
-  # 2-3x täglich zu unterschiedlichen Uhrzeiten (UTC!).
-  # Berlin = UTC+1 (Winter) / UTC+2 (Sommer). Die Minutenwerte sind bewusst
-  # ungleich :00 gewählt; zusätzlich variiert das Skript die Zeit per Jitter.
+  # "Seltener, breiter": 1x taeglich, dafuer mehrere Datumskombinationen pro Lauf
+  # (budget.searches_per_run in config.yaml). Uhrzeit variiert zusaetzlich per Jitter.
+  # Der Budget-Waechter in der DB begrenzt die SerpApi-Requests hart auf < 100/Monat.
   schedule:
-    - cron: "11 5 * * *"    # ~06:11 / 07:11 Berlin  (Vormittag)
-    - cron: "3 10 * * *"    # ~11:03 / 12:03 Berlin  (Mittag)
-    - cron: "27 17 * * *"   # ~18:27 / 19:27 Berlin  (Abend)
+    - cron: "17 8 * * *"    # ~09:17 / 10:17 Berlin
   workflow_dispatch:
     inputs:
       no_jitter:
-        description: "Zufällige Wartezeit überspringen (sofort abfragen)"
+        description: "Zufaellige Wartezeit ueberspringen (sofort abfragen)"
         type: boolean
         default: true
 
@@ -33,7 +31,7 @@ jobs:
           python-version: "3.11"
           cache: pip
 
-      - name: Abhängigkeiten installieren
+      - name: Abhaengigkeiten installieren
         run: pip install -r requirements.txt
 
       - name: Flugpreise abfragen und speichern
@@ -52,7 +50,7 @@ jobs:
           git config user.email "actions@github.com"
           git add data/flugpreise.db docs/index.html
           if git diff --staged --quiet; then
-            echo "Keine Änderungen zu committen."
+            echo "Keine Aenderungen zu committen."
           else
             git commit -m "chore: Flugpreis-Abfrage $(date -u +'%Y-%m-%d %H:%M UTC')"
             git push

@@ -1,9 +1,10 @@
-"""Umwandlung roher SerpApi-Flugobjekte in :class:`Offer`-Objekte."""
+"""Umwandlung roher SerpApi-Flugobjekte in Legs/Offers."""
 
 from __future__ import annotations
 
+from .dates import parse_serpapi_datetime
 from .filters import layover_codes_from_flight
-from .models import Offer, Segment
+from .models import Leg, Segment
 from .normalize import normalize_baggage_for_airlines
 
 
@@ -15,40 +16,39 @@ def collect_flight_entries(data: dict) -> list[dict]:
     return entries
 
 
-def build_offer(entry: dict, currency: str) -> Offer:
-    """Baut aus einem SerpApi-Flugobjekt ein normalisiertes Angebot."""
+def leg_from_entry(entry: dict) -> Leg:
+    """Baut aus einem SerpApi-Flugobjekt ein normalisiertes Leg."""
     raw_segments = entry.get("flights", []) or []
     segments = [Segment.from_serpapi(s) for s in raw_segments]
-
     airlines = [s.airline for s in segments if s.airline]
-    layover_codes = layover_codes_from_flight(entry)
-    layover_details = entry.get("layovers", []) or []
-
-    travel_class = ""
-    if segments:
-        travel_class = segments[0].travel_class or ""
-
     baggage = normalize_baggage_for_airlines(airlines)
 
-    dep = segments[0] if segments else None
-    arr = segments[-1] if segments else None
+    origin = segments[0].departure_airport if segments else ""
+    destination = segments[-1].arrival_airport if segments else ""
 
-    return Offer(
-        price=float(entry.get("price") or 0),
-        currency=currency,
-        airlines=airlines,
-        total_duration_min=entry.get("total_duration"),
-        stops=max(len(segments) - 1, 0),
-        layover_airports=layover_codes,
-        layover_details=layover_details,
-        departure_airport=dep.departure_airport if dep else "",
-        departure_time=dep.departure_time if dep else "",
-        arrival_airport=arr.arrival_airport if arr else "",
-        arrival_time=arr.arrival_time if arr else "",
-        travel_class=travel_class,
+    return Leg(
+        origin=origin,
+        destination=destination,
+        segments=segments,
+        layover_airports=layover_codes_from_flight(entry),
+        duration_min=entry.get("total_duration"),
         baggage_checked=baggage["checked"],
         baggage_carry_on=baggage["carry_on"],
-        segments=segments,
-        booking_token=entry.get("booking_token") or entry.get("departure_token"),
-        carbon_emissions_g=(entry.get("carbon_emissions") or {}).get("this_flight"),
     )
+
+
+def entry_price(entry: dict) -> float:
+    return float(entry.get("price") or 0)
+
+
+def entry_token(entry: dict) -> str | None:
+    return entry.get("departure_token") or entry.get("booking_token")
+
+
+def leg_arrival_datetime(entry: dict):
+    """Ankunftszeitpunkt des letzten Segments eines Eintrags (oder None)."""
+    segs = entry.get("flights", []) or []
+    if not segs:
+        return None
+    arr = (segs[-1].get("arrival_airport") or {}).get("time")
+    return parse_serpapi_datetime(arr)

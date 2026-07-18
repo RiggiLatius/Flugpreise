@@ -1,13 +1,15 @@
-"""Haupt-Orchestrierung: Abfragen, Filtern, Top-N speichern, Report erzeugen.
+"""Haupt-Orchestrierung (Open-Jaw, flexibles Datums-Raster, budgetsicher).
 
-Ablauf:
-    1. Konfiguration + API-Key laden
-    2. (optional) zufällige Wartezeit, um Abfragezeiten zu variieren
-    3. SerpApi-Suche FRA->MEL (2 Erwachsene + 1 Infant, Economy)
-    4. Harten SIN/BKK-Filter auf die Segmentdaten anwenden
-    5. optional Rückflug-Leg verifizieren (Round-Trip)
-    6. Top-3 der günstigsten gefilterten Angebote in SQLite schreiben
-    7. Statische HTML-Seite (docs/index.html) neu erzeugen
+Ablauf je Lauf:
+    1. Konfiguration + API-Key laden, Budget-Wächter initialisieren
+    2. Datums-Raster bilden; per rotierendem Cursor die nächsten N Kombinationen wählen
+    3. je Kombination: Multi-City-Suche FRA->MEL ... CHC->FRA
+       - HARTER SIN/BKK-Filter auf den Hinflug (Leg 1)
+       - Post-Filter: MEL-Ankunft muss im Fenster liegen
+       - optional Rückflug (Leg 2, CHC->FRA) via departure_token nachladen und
+         ebenfalls hart auf SIN/BKK filtern
+       - Top-N günstigste vollständige Angebote je Kombination speichern
+    4. Cursor + Monatsbudget fortschreiben, HTML-Report neu erzeugen
 """
 
 from __future__ import annotations
@@ -18,11 +20,20 @@ import random
 import sys
 import time
 
-from . import serpapi_client, storage
+from . import storage
 from .config import Config, load_config
-from .filters import filter_flights, is_allowed
-from .models import Offer, QueryResult, Segment
-from .parse import build_offer, collect_flight_entries
+from .dates import date_in_window
+from .filters import flight_passes
+from .grid import DateCombo
+from .models import Offer, QueryResult
+from .parse import (
+    collect_flight_entries,
+    entry_price,
+    entry_token,
+    leg_arrival_datetime,
+    leg_from_entry,
+)
+from .provider import Budget, BudgetExhausted, FixtureProvider, LiveProvider
 from .report import write_report
 
 
@@ -34,136 +45,168 @@ def _apply_jitter(max_minutes: int) -> None:
     if max_minutes <= 0:
         return
     delay = random.randint(0, max_minutes * 60)
-    _log(f"Variiere Abfragezeit: warte {delay} Sekunden (max {max_minutes} min).")
+    _log(f"Variiere Abfragezeit: warte {delay} s (max {max_minutes} min).")
     time.sleep(delay)
 
 
-def _verify_return_legs(
-    offers: list[Offer], cfg: Config, base_params: dict
-) -> list[Offer]:
-    """Prüft für Round-Trip den Rückflug-Leg auf den SIN/BKK-Filter.
-
-    Kostet je Angebot einen zusätzlichen SerpApi-Request -- daher nur für die
-    (bereits nach Hinflug gefilterten) Top-Kandidaten und nur wenn aktiviert.
-    Angebote, deren Rückflug keinen gültigen Hub hat, werden verworfen.
-    """
-    verified: list[Offer] = []
-    for offer in offers:
-        if not offer.booking_token:
-            _log("  Kein departure_token -> Rückflug nicht prüfbar, verwerfe Angebot.")
-            continue
-        try:
-            ret = serpapi_client.search_return(base_params, offer.booking_token)
-        except serpapi_client.SerpApiError as exc:
-            _log(f"  Rückflug-Abruf fehlgeschlagen: {exc}")
-            continue
-
-        ret_entries = collect_flight_entries(ret)
-        # günstigsten gültigen Rückflug wählen
-        valid = [
-            build_offer(e, cfg.currency)
-            for e in ret_entries
-        ]
-        valid = [
-            o for o in valid
-            if is_allowed(o.layover_airports, require_layover=cfg.require_layover)
-        ]
-        if not valid:
-            _log("  Kein Rückflug über SIN/BKK -> Angebot verworfen.")
-            continue
-        best_ret = min(valid, key=lambda o: o.price or float("inf"))
-        offer.return_segments = best_ret.segments
-        offer.return_layover_airports = best_ret.layover_airports
-        # Preis aus dem Round-Trip-Abschluss übernehmen (Gesamtpreis)
-        if best_ret.price:
-            offer.price = best_ret.price
-        verified.append(offer)
-    return verified
+def _arrival_in_window(entry: dict, cfg: Config) -> bool:
+    dt = leg_arrival_datetime(entry)
+    if not dt:
+        return False
+    return date_in_window(dt.date(), cfg.arrival_start, cfg.arrival_end)
 
 
-def run(cfg: Config, *, fixture: str | None = None, no_jitter: bool = False) -> QueryResult:
-    api_key = os.environ.get("SERPAPI_KEY", "").strip()
+def process_combo(cfg: Config, provider, combo: DateCombo, api_key: str) -> QueryResult:
+    """Verarbeitet eine einzelne Datumskombination und liefert deren Top-N."""
+    params = cfg.multi_city_params(combo, api_key)
+    data1 = provider.search_leg1(params)
+    entries = collect_flight_entries(data1)
 
-    if fixture:
-        _log(f"Offline-Modus: lade Fixture {fixture}")
-        data = serpapi_client.load_fixture(fixture)
-        base_params = {}
+    # --- HARTER FILTER Leg 1 (FRA->MEL): nur SIN/BKK ---------------------
+    hub_ok = [e for e in entries if flight_passes(e, require_layover=cfg.require_layover)]
+    # --- Post-Filter: MEL-Ankunft im Fenster -----------------------------
+    candidates = [e for e in hub_ok if _arrival_in_window(e, cfg)]
+    candidates.sort(key=entry_price)
+
+    offers: list[Offer] = []
+
+    if cfg.verify_return_leg:
+        # Rückflug (Leg 2, CHC->FRA) nachladen und ebenfalls auf SIN/BKK filtern.
+        for cand in candidates[: cfg.drill_max_candidates]:
+            token = entry_token(cand)
+            if not token:
+                continue
+            data2 = provider.search_return(params, token)
+            ret_entries = collect_flight_entries(data2)
+            ret_ok = [
+                e for e in ret_entries
+                if flight_passes(e, require_layover=cfg.require_layover)
+            ]
+            if not ret_ok:
+                _log("    Kein SIN/BKK-Rückflug für diesen Hinflug-Kandidaten.")
+                continue
+            ret_ok.sort(key=entry_price)
+            out_leg = leg_from_entry(cand)
+            for r in ret_ok[: cfg.top_n]:
+                ret_leg = leg_from_entry(r)
+                offers.append(
+                    Offer(
+                        price=entry_price(r),  # Gesamtpreis der Open-Jaw-Kombination
+                        currency=cfg.currency,
+                        outbound=out_leg,
+                        return_leg=ret_leg,
+                        total_duration_min=out_leg.duration_min,
+                        booking_token=entry_token(r),
+                        return_verified=True,
+                        carbon_emissions_g=(r.get("carbon_emissions") or {}).get("this_flight"),
+                    )
+                )
+            break  # gültige Rückflüge gefunden -> nicht weiter drillen (Budget schonen)
     else:
-        if not api_key:
-            raise SystemExit(
-                "SERPAPI_KEY ist nicht gesetzt. Bitte als Umgebungsvariable/Secret "
-                "bereitstellen oder mit --fixture offline testen."
+        # Ohne Rückflug-Verifikation: nur Hinflug-basierte Angebote (Gesamtpreis-Schätzung).
+        for e in candidates[: cfg.top_n]:
+            out_leg = leg_from_entry(e)
+            offers.append(
+                Offer(
+                    price=entry_price(e),
+                    currency=cfg.currency,
+                    outbound=out_leg,
+                    return_leg=None,
+                    total_duration_min=out_leg.duration_min,
+                    booking_token=entry_token(e),
+                    return_verified=False,
+                    carbon_emissions_g=(e.get("carbon_emissions") or {}).get("this_flight"),
+                )
             )
-        if not no_jitter:
-            _apply_jitter(cfg.max_jitter_minutes)
-        base_params = cfg.serpapi_params(api_key)
-        safe = {k: v for k, v in base_params.items() if k != "api_key"}
-        _log(f"SerpApi-Abfrage: {safe}")
-        data = serpapi_client.search(base_params)
 
-    entries = collect_flight_entries(data)
-    _log(f"{len(entries)} Angebote von der API erhalten.")
-
-    # --- HARTER FILTER: nur Zwischenstopp SIN oder BKK -------------------
-    passing = filter_flights(entries, require_layover=cfg.require_layover)
-    _log(f"{len(passing)} Angebote erfüllen den SIN/BKK-Filter.")
-
-    offers = [build_offer(e, cfg.currency) for e in passing]
     offers.sort(key=lambda o: o.price or float("inf"))
+    offers = offers[: cfg.top_n]
 
-    # Top-N vorauswählen (spart Requests bei der Rückflug-Prüfung)
-    top = offers[: cfg.top_n]
-
-    if cfg.trip_type == "round_trip" and cfg.verify_return_leg and not fixture:
-        _log("Verifiziere Rückflug-Leg der Top-Kandidaten ...")
-        top = _verify_return_legs(top, cfg, base_params)
-        top.sort(key=lambda o: o.price or float("inf"))
-        top = top[: cfg.top_n]
-
-    result = QueryResult(
+    return QueryResult(
         route=cfg.route,
-        outbound_date=cfg.outbound_date,
-        return_date=cfg.return_date,
-        trip_type=cfg.trip_type,
+        outbound_date=combo.outbound_date.isoformat(),
+        return_date=combo.return_date.isoformat(),
+        target_arrival=combo.target_arrival.isoformat(),
+        stay_days=combo.stay_days,
+        trip_type=cfg.mode,
         passengers=cfg.passengers,
         currency=cfg.currency,
         total_results=len(entries),
-        filtered_results=len(passing),
-        offers=top,
+        filtered_results=len(candidates),
+        offers=offers,
     )
 
-    for i, o in enumerate(top, 1):
-        _log(f"  #{i}: {o.price} {o.currency} | {o.fare_summary()}")
 
-    return result
+def run(cfg: Config, conn, *, fixture: str | None = None, no_jitter: bool = False) -> list[QueryResult]:
+    grid = cfg.grid()
+    n = len(grid)
+    if n == 0:
+        _log("Leeres Datums-Raster -- nichts zu tun.")
+        return []
+
+    if fixture:
+        _log(f"Offline-Modus: Fixture {fixture} (verarbeite 1 Kombination).")
+        provider = FixtureProvider(fixture)
+        combos = grid[:1]
+        cursor = 0
+        api_key = "FIXTURE"
+    else:
+        api_key = os.environ.get("SERPAPI_KEY", "").strip()
+        if not api_key:
+            raise SystemExit(
+                "SERPAPI_KEY ist nicht gesetzt. Als Secret/Umgebungsvariable bereitstellen "
+                "oder mit --fixture offline testen."
+            )
+        budget = Budget(conn, cfg.monthly_max_requests)
+        _log(f"Monatsbudget: {budget.used}/{budget.monthly_max} verbraucht.")
+        if budget.remaining <= 0:
+            _log("Monatsbudget erschöpft -- Lauf wird übersprungen.")
+            return []
+        if not no_jitter:
+            _apply_jitter(cfg.raw.get("schedule", {}).get("max_jitter_minutes", 20))
+        provider = LiveProvider(api_key, budget)
+        cursor = storage.get_cursor(conn, cfg.grid_signature())
+        combos = [grid[(cursor + i) % n] for i in range(cfg.searches_per_run)]
+
+    results: list[QueryResult] = []
+    processed = 0
+    for combo in combos:
+        _log(
+            f"Kombi: Abflug {combo.outbound_date} | Ziel-Ankunft {combo.target_arrival} "
+            f"| Aufenthalt {combo.stay_days} T | Rückflug CHC {combo.return_date}"
+        )
+        try:
+            result = process_combo(cfg, provider, combo, api_key)
+        except BudgetExhausted as exc:
+            _log(f"{exc} -- Lauf wird hier beendet.")
+            break
+        results.append(result)
+        processed += 1
+        storage.save_query(conn, result)
+        _log(f"  {result.filtered_results} gefiltert, {len(result.offers)} Angebote gespeichert.")
+        for i, o in enumerate(result.offers, 1):
+            verified = "Rückflug SIN/BKK ✓" if o.return_verified else "nur Hinflug gefiltert"
+            _log(f"    #{i}: {o.price:.0f} {o.currency} | {o.airline_label} | {verified}")
+
+    if not fixture and processed:
+        storage.set_cursor(conn, (cursor + processed) % n)
+
+    return results
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Flugpreis-Tracker FRA->MEL")
+    parser = argparse.ArgumentParser(description="Flugpreis-Tracker Open-Jaw FRA-MEL / CHC-FRA")
     parser.add_argument("--config", default="config.yaml")
-    parser.add_argument(
-        "--fixture",
-        help="Statt der API eine gespeicherte SerpApi-JSON-Antwort verwenden.",
-    )
-    parser.add_argument(
-        "--no-jitter",
-        action="store_true",
-        help="Zufällige Wartezeit vor der Abfrage überspringen.",
-    )
-    parser.add_argument(
-        "--no-report",
-        action="store_true",
-        help="Kein HTML-Report erzeugen.",
-    )
+    parser.add_argument("--fixture", help="Statt der API eine gespeicherte Antwort verwenden.")
+    parser.add_argument("--no-jitter", action="store_true", help="Zufällige Wartezeit überspringen.")
+    parser.add_argument("--no-report", action="store_true", help="Kein HTML-Report erzeugen.")
     args = parser.parse_args(argv)
 
     cfg = load_config(args.config)
-    result = run(cfg, fixture=args.fixture, no_jitter=args.no_jitter)
-
     conn = storage.connect(cfg.db_path)
     storage.init_db(conn)
-    query_id = storage.save_query(conn, result)
-    _log(f"Abfrage #{query_id} mit {len(result.offers)} Angeboten gespeichert.")
+
+    results = run(cfg, conn, fixture=args.fixture, no_jitter=args.no_jitter)
 
     if not args.no_report:
         write_report(conn, cfg)
@@ -171,8 +214,9 @@ def main(argv: list[str] | None = None) -> int:
 
     conn.close()
 
-    if result.filtered_results == 0:
-        _log("WARNUNG: Kein Angebot erfüllte den SIN/BKK-Filter.")
+    total_offers = sum(len(r.offers) for r in results)
+    if results and total_offers == 0:
+        _log("WARNUNG: In diesem Lauf erfüllte keine Kombination den SIN/BKK-Filter.")
     return 0
 
 

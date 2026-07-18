@@ -1,30 +1,65 @@
-# Flugpreis-Tracker FRA → MEL
+# Flugpreis-Tracker – Open-Jaw FRA → MEL … CHC → FRA
 
-Automatisiertes Tool, das mehrmals täglich Flugpreise für **Frankfurt (FRA) → Melbourne (MEL)**
-abfragt, hart nach dem Umsteigeflughafen filtert und die besten Angebote protokolliert.
+Automatisiertes Tool, das Flugpreise für eine **Open-Jaw-Reise** abfragt, hart nach dem
+Umsteigeflughafen filtert und die besten Angebote protokolliert.
 
-- **Passagiere:** 2 Erwachsene + 1 Kleinkind (Infant on lap)
-- **Kabine:** Economy
+- **Hinflug:** Frankfurt (FRA) → Melbourne (MEL)
+- **Rückflug:** Christchurch (CHC) → Frankfurt (FRA)
+- **Passagiere:** 2 Erwachsene + 1 Kleinkind (Infant on lap), **Economy**
+- **Ankunft in Melbourne:** flexibel im Fenster **20.01.–07.02.2027**
+- **Aufenthalt:** **2,5–3,5 Wochen** (konfigurierbar, Standard 18 / 21 / 25 Tage)
 - **Harte Bedingung (nicht verhandelbar):** Umstieg **ausschließlich über Singapur (SIN)
-  oder Bangkok (BKK)**. Jedes andere Angebot wird verworfen – egal wie günstig.
+  oder Bangkok (BKK)** – auf **beiden** Legs. Jedes andere Angebot wird verworfen.
 - **Betrieb:** komplett kostenlos (SerpApi Free-Tier + GitHub Actions + SQLite + GitHub Pages)
+
+> Der Trans-Tasman-Flug **MEL → CHC** wird separat gebucht und hier bewusst **nicht** getrackt.
 
 ---
 
 ## Der harte SIN/BKK-Filter
 
-Die zentrale Regel ist bewusst so implementiert, dass sie **nicht umgangen werden kann**:
+Die zentrale Regel ist so implementiert, dass sie **nicht umgangen werden kann**:
 
-- Die Liste der erlaubten Flughäfen (`{"SIN", "BKK"}`) steht als Konstante direkt im Code
-  (`flugpreise/filters.py`, `ALLOWED_LAYOVER_AIRPORTS`) und wird **nicht** aus der Config gelesen.
-- Der Filter läuft **programmatisch nach** der API-Antwort auf den Segment-/Layover-Daten –
-  nicht als Suchparameter (die Flug-APIs bieten keinen „nur über Hub X"-Parameter).
-- Ein Angebot besteht den Filter nur, wenn **alle** Zwischenstopps in `{SIN, BKK}` liegen.
-  Ein einziger anderer Stopp (z. B. DXB, DOH) führt zum Verwerfen.
-- Echte Direktflüge (0 Umstiege) werden bei `require_layover: true` ebenfalls verworfen.
+- Die erlaubten Flughäfen (`{"SIN", "BKK"}`) stehen als Konstante direkt im Code
+  (`flugpreise/filters.py`, `ALLOWED_LAYOVER_AIRPORTS`) und werden **nicht** aus der Config gelesen.
+- Der Filter läuft **programmatisch nach** der API-Antwort auf den Segment-/Layover-Daten.
+- Ein Leg besteht den Filter nur, wenn **alle** Zwischenstopps in `{SIN, BKK}` liegen.
+- Er wird auf **beide** Legs angewandt: Hinflug (FRA→MEL) und – über den Drill-down – auch
+  Rückflug (CHC→FRA). Tests beweisen, dass selbst *günstigere* Angebote über falsche Hubs
+  (DXB/DOH/SYD) zuverlässig ausgeschlossen werden.
 
-Das Verhalten ist durch Tests abgesichert (`tests/test_filters.py`): dort wird geprüft, dass
-selbst *günstigere* Angebote über falsche Hubs zuverlässig ausgeschlossen werden.
+---
+
+## Wie die flexiblen Datumsfenster funktionieren
+
+Aus dem **Ankunftsfenster** (20.01.–07.02.) und den **Aufenthaltslängen** wird ein
+**Datums-Raster** aus konkreten Kombinationen gebildet (`flugpreise/grid.py`):
+
+```
+Hinflug  FRA → MEL  am  (Ziel-Ankunft − outbound_offset_days)
+Rückflug CHC → FRA  am  (Ziel-Ankunft + stay_days)
+```
+
+Die tatsächliche MEL-Ankunft wird zusätzlich per **Post-Filter** gegen das Fenster geprüft.
+Mit den Standardwerten (Ankunft alle 4 Tage × 3 Aufenthaltslängen) entstehen **18 Kombinationen**.
+
+### Budget-Strategie: „seltener, breiter"
+
+SerpApi Free = **100 Requests/Monat**. Jede Kombination kostet mit Rückflug-Verifikation
+**2 Requests** (Hinflug + Drill-down Rückflug). Deshalb:
+
+- **1 Lauf/Tag** (statt mehrmals), dafür **mehrere Kombinationen pro Lauf**
+  (`budget.searches_per_run`, Standard 2).
+- Ein **rotierender Cursor** (in der DB) sorgt dafür, dass über mehrere Läufe das ganze
+  Raster abgedeckt und dann von vorn aktualisiert wird.
+- Ein **Budget-Wächter** zählt alle Requests pro Monat in der DB und stoppt **hart** unter
+  dem Free-Tier (`budget.monthly_max_requests`, Standard 95) – **egal wie oft** der Cron läuft.
+
+Beispiel-Rechnung: 2 Kombis/Lauf × 2 Requests × ~15 aktive Tage ≈ 60 Requests/Monat →
+volles Raster ~alle 9 Tage neu. Grid-Dichte, Läufe und Budget sind frei konfigurierbar.
+
+> Mehr Abdeckung gewünscht? `Amadeus for Developers` (2.000 Calls/Monat) ist als Datenquelle
+> vorgesehen – nur `serpapi_client.py`/`parse.py` müssten angepasst werden, Filter & Speicherung bleiben.
 
 ---
 
@@ -32,67 +67,54 @@ selbst *günstigere* Angebote über falsche Hubs zuverlässig ausgeschlossen wer
 
 ```
 flugpreise/
-  filters.py       # HARTER SIN/BKK-Filter (Konstante im Code)
-  config.py        # config.yaml laden, SerpApi-Parameter bauen
+  filters.py       # HARTER SIN/BKK-Filter (Konstante im Code, beide Legs)
+  dates.py         # Datums-Utilities (Fenster, Parsing)
+  grid.py          # Datums-Raster aus Ankunftsfenster × Aufenthaltslaengen
+  config.py        # config.yaml laden, Multi-City-Parameter bauen
   serpapi_client.py# SerpApi Google-Flights-Aufruf (nur requests)
-  parse.py         # SerpApi-Antwort -> Offer-Objekte
-  normalize.py     # Freigepäck-/Tarif-Normalisierung je Airline
-  models.py        # Datenmodelle (Segment, Offer, QueryResult)
-  storage.py       # SQLite-Persistenz (queries + offers)
+  provider.py      # Live-/Fixture-Datenquelle + Monats-Budget-Waechter
+  parse.py         # SerpApi-Antwort -> Leg-Objekte
+  normalize.py     # Freigepaeck-/Tarif-Normalisierung je Airline
+  models.py        # Datenmodelle (Segment, Leg, Offer, QueryResult)
+  storage.py       # SQLite (queries, offers, state: Cursor + Budget)
   report.py        # statische HTML-Seite (docs/index.html)
   tracker.py       # Orchestrierung + CLI
-.github/workflows/track.yml  # Scheduler (2-3x täglich, mit Zeit-Variation)
-config.yaml        # Reisedaten, Passagiere, Optionen
+.github/workflows/track.yml  # Scheduler (1x taeglich, Jitter)
+config.yaml        # Reisedaten, Raster, Budget, Optionen
 data/flugpreise.db # SQLite-Datenbank (wird von der Action commitet)
-docs/index.html    # veröffentlichbare Ergebnisseite (GitHub Pages)
+docs/index.html    # veroeffentlichbare Ergebnisseite (GitHub Pages)
 ```
 
-**Ablauf je Abfrage:** SerpApi-Suche → harter SIN/BKK-Filter → nach Preis sortieren →
-Top-3 in SQLite schreiben → HTML-Report neu erzeugen.
+**Ablauf je Kombination:** Multi-City-Suche (`type=3`) → SIN/BKK-Filter Hinflug →
+Ankunftsfenster-Post-Filter → Rückflug via `departure_token` nachladen → SIN/BKK-Filter Rückflug →
+Top-3 günstigste vollständige Open-Jaw-Angebote in SQLite.
 
-Pro Angebot werden gespeichert: Abfragezeitpunkt, Airline(s), Preis, Ab-/Ankunftszeiten,
-Anzahl Umstiege + Umsteigeflughafen (SIN/BKK), Gesamtreisedauer, normalisiertes Freigepäck
-(aufgegeben + Handgepäck), Tarif-/Klassen-Zusammenfassung, Segmentdetails, Buchungs-Token
-und CO₂-Schätzung.
+Pro Angebot gespeichert: Abfragezeit, Airline(s), **Gesamtpreis**, Ab-/Ankunftszeiten beider Legs,
+Umsteige-Hubs (SIN/BKK) je Leg, Flugdauer, normalisiertes Freigepäck, ob der Rückflug verifiziert
+wurde, Segmentdetails, Buchungs-Token und CO₂-Schätzung.
 
 ---
 
 ## Einrichtung
 
-### 1. SerpApi-Key besorgen (kostenlos)
+### 1. SerpApi-Key (kostenlos)
+Account auf <https://serpapi.com> (Free-Tier: 100 Requests/Monat), API-Key kopieren.
 
-1. Account auf <https://serpapi.com> anlegen (Free-Tier: **100 Requests/Monat**).
-2. API-Key aus dem Dashboard kopieren.
-
-> 2–3 Abfragen/Tag ≈ 60–90 Requests/Monat → passt in den Free-Tier.
-> (Achtung: `verify_return_leg: true` verbraucht **zusätzliche** Requests, siehe unten.)
-
-### 2. Key als GitHub-Secret hinterlegen
-
+### 2. Key als GitHub-Secret
 Repo → **Settings → Secrets and variables → Actions → New repository secret**
-- Name: `SERPAPI_KEY`
-- Wert: dein SerpApi-Key
+→ Name `SERPAPI_KEY`.
 
-### 3. Reisedaten anpassen
-
-In `config.yaml` `outbound_date` / `return_date` und ggf. Passagiere/Optionen setzen.
+### 3. Reisedaten prüfen
+In `config.yaml`: `arrival_window`, `stay_days`, `grid` und `budget` nach Bedarf anpassen.
 
 ### 4. GitHub Pages aktivieren (Veröffentlichung für dich & Partnerin)
-
-Repo → **Settings → Pages** → Source: *Deploy from a branch* → Branch: `main`, Ordner `/docs`.
-Danach ist die Ergebnisseite unter `https://<user>.github.io/<repo>/` erreichbar.
-Die Seite trägt `noindex`, ist also nicht für Suchmaschinen bestimmt.
+Repo → **Settings → Pages** → Source: *Deploy from a branch* → Branch `main`, Ordner `/docs`.
+Ergebnisseite: `https://<user>.github.io/<repo>/` (trägt `noindex`).
 
 ### 5. Scheduler
-
-`.github/workflows/track.yml` läuft per Cron 3×/Tag (Zeiten in **UTC**). Die tatsächliche
-Abfragezeit variiert zusätzlich durch einen zufälligen Jitter (`schedule.max_jitter_minutes`),
-sodass nie exakt zur selben Uhrzeit abgefragt wird.
-
-> Hinweis: Geplante Actions laufen nur auf dem **Default-Branch** (`main`). Erst nach dem
-> Merge dieses Branches startet der Zeitplan automatisch.
-
-Manuell testen: Repo → **Actions → Flugpreis-Tracker → Run workflow**.
+`.github/workflows/track.yml` läuft per Cron **1×/Tag** (Zeit in UTC) + Jitter.
+Geplante Actions laufen nur auf dem **Default-Branch** (`main`) – erst nach dem Merge aktiv.
+Manuell: **Actions → Run workflow**.
 
 ---
 
@@ -101,50 +123,25 @@ Manuell testen: Repo → **Actions → Flugpreis-Tracker → Run workflow**.
 ```bash
 pip install -r requirements.txt
 
-# Offline-Demo ohne API-Key (nutzt die mitgelieferte Beispielantwort):
-python -m flugpreise.tracker --fixture tests/fixtures/serpapi_sample.json --no-jitter
+# Offline-Demo ohne API-Key (Open-Jaw-Fixture):
+python -m flugpreise.tracker --fixture tests/fixtures/open_jaw_sample.json --no-jitter
 
 # Echte Abfrage:
 export SERPAPI_KEY=dein_key
 python -m flugpreise.tracker --no-jitter
 
-# Tests (inkl. Filter-Absicherung):
+# Tests (Filter, Grid, Pipeline):
 python -m pytest -q
 ```
-
-Ergebnis: Einträge in `data/flugpreise.db` und aktualisierte `docs/index.html`.
 
 ---
 
 ## Preis-Vergleichbarkeit & Gepäck
 
-Damit Preise je Airline fair vergleichbar sind, werden **Kabinenklasse** (nur Economy) und
-**Freigepäck** (aufgegeben + Handgepäck) mitgeführt. Da Google Flights die Freigepäckmenge
-nicht zuverlässig strukturiert liefert, pflegt `flugpreise/normalize.py` eine
-**Normalisierungstabelle je Airline** (Orientierungswerte, bitte gelegentlich prüfen).
-Für das Kleinkind gelten abweichende Regeln – siehe Hinweis im Report.
-
----
-
-## Round-Trip-Hinweis (wichtig)
-
-Google Flights liefert bei Hin-/Rückflug zunächst die **Hinflüge**; der Gesamtpreis ist der
-Round-Trip-Preis. Der Standardfilter prüft die Umsteige-Hubs auf dem **Hinflug**.
-
-Wer auch den **Rückflug** streng auf SIN/BKK prüfen will, setzt `filter.verify_return_leg: true`.
-Dann wird pro Top-Kandidat der Rückflug nachgeladen und ebenfalls gefiltert – das kostet
-**zusätzliche SerpApi-Requests** (Budget beachten!). Angebote ohne gültigen Rückflug-Hub
-werden dann verworfen.
-
----
-
-## Alternativen zur Datenquelle
-
-Der Code ist um SerpApi herum gebaut (einfachster, stabiler Self-Service-Zugang). Alternativen
-mit Free-Tier: **Amadeus for Developers** (2.000 Calls/Monat, Testumgebung ggf. mit leicht
-abweichenden Preisen) oder **Kiwi.com Tequila** (Freigabe nötig). Für einen Wechsel müssten
-`serpapi_client.py` + `parse.py` angepasst werden; der harte Filter (`filters.py`) und die
-Speicherung bleiben unverändert.
+Kabinenklasse (nur Economy) und **Freigepäck** (aufgegeben + Handgepäck) werden je Leg mitgeführt.
+Da Google Flights die Freigepäckmenge nicht zuverlässig liefert, pflegt `flugpreise/normalize.py`
+eine **Normalisierungstabelle je Airline** (Orientierungswerte). Für das Kleinkind gelten
+abweichende Regeln (Hinweis im Report).
 
 ---
 
@@ -152,7 +149,7 @@ Speicherung bleiben unverändert.
 
 | Baustein          | Kosten                                   |
 |-------------------|------------------------------------------|
-| SerpApi Free-Tier | 0 € (100 Requests/Monat)                 |
+| SerpApi Free-Tier | 0 € (100 Requests/Monat, Budget-Wächter hält < 100) |
 | GitHub Actions    | 0 € (öffentliche Repos unbegrenzt)       |
 | GitHub Pages      | 0 €                                       |
 | SQLite            | 0 € (Datei im Repo)                       |

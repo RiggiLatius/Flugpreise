@@ -1,4 +1,4 @@
-"""Datenmodelle für Abfragen und Angebote."""
+"""Datenmodelle für Abfragen und Angebote (Open-Jaw)."""
 
 from __future__ import annotations
 
@@ -9,6 +9,13 @@ from datetime import datetime, timezone
 
 def _now_utc_iso() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+
+
+def _fmt_duration(minutes: int | None) -> str:
+    if not minutes:
+        return "?"
+    h, m = divmod(int(minutes), 60)
+    return f"{h}h{m:02d}m"
 
 
 @dataclass
@@ -43,76 +50,129 @@ class Segment:
 
 
 @dataclass
+class Leg:
+    """Ein Reise-Leg (Hinflug oder Rückflug) mit Segmenten und Zwischenstopps."""
+
+    origin: str
+    destination: str
+    segments: list[Segment]
+    layover_airports: list[str]
+    duration_min: int | None = None
+    baggage_checked: str = ""
+    baggage_carry_on: str = ""
+
+    @property
+    def stops(self) -> int:
+        return max(len(self.segments) - 1, 0)
+
+    @property
+    def airlines(self) -> list[str]:
+        return [s.airline for s in self.segments if s.airline]
+
+    @property
+    def departure_time(self) -> str:
+        return self.segments[0].departure_time if self.segments else ""
+
+    @property
+    def arrival_time(self) -> str:
+        return self.segments[-1].arrival_time if self.segments else ""
+
+
+@dataclass
 class Offer:
-    """Ein gefiltertes, vergleichbar aufbereitetes Flugangebot."""
+    """Ein vollständiges, gefiltertes Open-Jaw-Angebot (beide Legs SIN/BKK)."""
 
     price: float
     currency: str
-    airlines: list[str]
-    total_duration_min: int | None
-    stops: int
-    layover_airports: list[str]
-    layover_details: list[dict]
-    departure_airport: str
-    departure_time: str
-    arrival_airport: str
-    arrival_time: str
-    travel_class: str
-    baggage_checked: str
-    baggage_carry_on: str
-    segments: list[Segment]
+    outbound: Leg
+    return_leg: Leg | None
+    total_duration_min: int | None = None
     booking_token: str | None = None
     carbon_emissions_g: int | None = None
-    return_segments: list[Segment] = field(default_factory=list)
-    return_layover_airports: list[str] = field(default_factory=list)
+    return_verified: bool = False
+
+    # ---- abgeleitete Darstellung ------------------------------------------
+
+    @property
+    def airlines(self) -> list[str]:
+        a = list(self.outbound.airlines)
+        if self.return_leg:
+            a += self.return_leg.airlines
+        return list(dict.fromkeys(a))
 
     @property
     def airline_label(self) -> str:
-        return ", ".join(dict.fromkeys(self.airlines)) or "unbekannt"
+        return ", ".join(self.airlines) or "unbekannt"
+
+    @property
+    def layover_airports(self) -> list[str]:
+        los = list(self.outbound.layover_airports)
+        if self.return_leg:
+            los += self.return_leg.layover_airports
+        return los
+
+    @property
+    def stops(self) -> int:
+        s = self.outbound.stops
+        if self.return_leg:
+            s += self.return_leg.stops
+        return s
 
     def fare_summary(self) -> str:
-        """Kurze, menschenlesbare Zusammenfassung des Angebots."""
-        dur = _fmt_duration(self.total_duration_min)
-        hubs = "/".join(self.layover_airports) or "-"
+        out_hubs = "/".join(self.outbound.layover_airports) or "-"
+        ret_hubs = "/".join(self.return_leg.layover_airports) if self.return_leg else "-"
+        ret = ""
+        if self.return_leg:
+            ret = f" | Rückflug über {ret_hubs}"
         return (
-            f"{self.airline_label} | {self.travel_class} | "
-            f"{self.stops} Umstieg(e) über {hubs} | Gesamtdauer {dur} | "
-            f"Aufgegeben: {self.baggage_checked}; Handgepäck: {self.baggage_carry_on}"
+            f"{self.airline_label} | Hinflug über {out_hubs}{ret} | "
+            f"Aufg.: {self.outbound.baggage_checked}; Handg.: {self.outbound.baggage_carry_on}"
         )
 
     def to_row(self) -> dict:
-        d = asdict(self)
-        d["airlines"] = json.dumps(self.airlines, ensure_ascii=False)
-        d["layover_airports"] = ",".join(self.layover_airports)
-        d["layover_details"] = json.dumps(self.layover_details, ensure_ascii=False)
-        d["segments"] = json.dumps(
-            [asdict(s) for s in self.segments], ensure_ascii=False
-        )
-        d["return_segments"] = json.dumps(
-            [asdict(s) for s in self.return_segments], ensure_ascii=False
-        )
-        d["return_layover_airports"] = ",".join(self.return_layover_airports)
-        return d
+        def leg_row(leg: Leg | None) -> str:
+            if not leg:
+                return json.dumps(None)
+            d = asdict(leg)
+            return json.dumps(d, ensure_ascii=False)
+
+        return {
+            "price": self.price,
+            "currency": self.currency,
+            "airlines": json.dumps(self.airlines, ensure_ascii=False),
+            "total_duration_min": self.total_duration_min,
+            "stops": self.stops,
+            "layover_airports": ",".join(self.layover_airports),
+            "outbound_departure_time": self.outbound.departure_time,
+            "outbound_arrival_time": self.outbound.arrival_time,
+            "outbound_hubs": ",".join(self.outbound.layover_airports),
+            "outbound_baggage_checked": self.outbound.baggage_checked,
+            "outbound_baggage_carry_on": self.outbound.baggage_carry_on,
+            "return_departure_time": self.return_leg.departure_time if self.return_leg else "",
+            "return_arrival_time": self.return_leg.arrival_time if self.return_leg else "",
+            "return_hubs": ",".join(self.return_leg.layover_airports) if self.return_leg else "",
+            "return_baggage_checked": self.return_leg.baggage_checked if self.return_leg else "",
+            "return_verified": 1 if self.return_verified else 0,
+            "outbound_leg": leg_row(self.outbound),
+            "return_leg": leg_row(self.return_leg),
+            "booking_token": self.booking_token,
+            "carbon_emissions_g": self.carbon_emissions_g,
+        }
 
 
 @dataclass
 class QueryResult:
-    """Metadaten einer Abfrage plus die zugehörigen Top-N-Angebote."""
+    """Ergebnis einer Abfrage für EINE Datumskombination."""
 
     queried_at_utc: str = field(default_factory=_now_utc_iso)
     route: str = ""
-    outbound_date: str = ""
-    return_date: str | None = None
-    trip_type: str = ""
+    outbound_date: str = ""      # Abflug FRA
+    return_date: str = ""        # Abflug CHC
+    target_arrival: str = ""     # angestrebte MEL-Ankunft
+    stay_days: int = 0
+    trip_type: str = "open_jaw"
     passengers: dict = field(default_factory=dict)
     currency: str = "EUR"
     total_results: int = 0
     filtered_results: int = 0
     offers: list[Offer] = field(default_factory=list)
-
-
-def _fmt_duration(minutes: int | None) -> str:
-    if not minutes:
-        return "?"
-    h, m = divmod(int(minutes), 60)
-    return f"{h}h{m:02d}m"

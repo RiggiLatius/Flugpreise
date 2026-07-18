@@ -1,44 +1,65 @@
-# Konfiguration des Flugpreis-Trackers FRA -> MEL
-# Bitte outbound_date / return_date auf eure realen Reisedaten anpassen.
+# Konfiguration des Flugpreis-Trackers (Open-Jaw FRA -> MEL ... CHC -> FRA)
+#
+# Reise: Hinflug Frankfurt -> Melbourne, Ankunft in einem Datumsfenster;
+#        Aufenthalt 2,5-3,5 Wochen; Rueckflug ab Christchurch -> Frankfurt.
+# Der Trans-Tasman-Flug MEL -> CHC wird separat gebucht und hier NICHT getrackt.
 
-route:
-  departure_id: FRA        # Frankfurt
-  arrival_id: MEL          # Melbourne
+mode: open_jaw
 
-trip:
-  type: round_trip         # round_trip | one_way
-  outbound_date: "2026-12-10"
-  return_date: "2026-12-29"
+outbound:
+  from: FRA                 # Frankfurt
+  to: MEL                   # Melbourne
+return:
+  from: CHC                 # Christchurch (Neuseeland)
+  to: FRA                   # Frankfurt
+
+# Ankunft in Melbourne (MEL) muss in dieses Fenster fallen (inklusiv):
+arrival_window:
+  start: "2027-01-20"
+  end: "2027-02-07"
+
+# Aufenthaltsdauer in Tagen (MEL-Ankunft -> CHC-Abflug): 2,5 / 3 / 3,5 Wochen.
+stay_days: [18, 21, 25]
+
+grid:
+  arrival_step_days: 4      # Rasterweite der Ankunftstage im Fenster
+  outbound_offset_days: 1   # Abflug FRA = Ziel-Ankunft - Offset
+                            # (die echte Ankunft wird zusaetzlich per Post-Filter geprueft)
 
 passengers:
   adults: 2
   children: 0
   infants_in_seat: 0
-  infants_on_lap: 1        # 1 Jahr altes Kleinkind auf dem Schoss
+  infants_on_lap: 1         # 1 Jahr altes Kleinkind auf dem Schoss
 
 cabin:
-  travel_class: economy    # economy | premium_economy | business | first
+  travel_class: economy     # economy | premium_economy | business | first
 
 search:
   currency: EUR
-  hl: de                   # Sprache
-  gl: de                   # Land
-  deep_search: false       # true = genauere (langsamere) Google-Flights-Suche
+  hl: de
+  gl: de
+  deep_search: false
 
 filter:
-  # HINWEIS: Die erlaubten Umsteigeflughäfen (SIN/BKK) sind bewusst hart im
-  # Code verankert (flugpreise/filters.py) und NICHT hier konfigurierbar,
-  # damit der Filter nicht umgangen werden kann.
-  require_layover: true    # true = echte Direktflüge (ohne Umstieg) verwerfen
-  verify_return_leg: false # true = bei Round-Trip auch den Rückflug auf SIN/BKK
-                           #        prüfen (kostet zusätzliche SerpApi-Requests!)
+  # HINWEIS: Die erlaubten Umsteigeflughaefen (SIN/BKK) sind bewusst hart im
+  # Code verankert (flugpreise/filters.py) und NICHT hier konfigurierbar.
+  require_layover: true      # echte Direktfluege (ohne Umstieg) verwerfen
+  verify_return_leg: true    # Rueckflug-Leg CHC->FRA ebenfalls hart auf SIN/BKK
+                             # pruefen (Drill-down, kostet je Kombi einen 2. Request)
+  drill_max_candidates: 2    # max. Hinflug-Kandidaten, fuer die der Rueckflug
+                             # nachgeladen wird, bis ein gueltiger SIN/BKK-Rueckflug gefunden ist
+
+budget:
+  monthly_max_requests: 95   # harte Obergrenze/Monat unter dem SerpApi-Free-Tier (100)
+  searches_per_run: 2        # Datumskombinationen pro Lauf ("seltener, breiter")
 
 schedule:
-  max_jitter_minutes: 20   # zufällige Wartezeit vor der Abfrage (Zeit-Variation)
+  max_jitter_minutes: 20     # zufaellige Wartezeit vor der Abfrage (Zeit-Variation)
 
 storage:
   db_path: data/flugpreise.db
 
 report:
-  top_n: 3                 # Top-N günstigste gefilterte Angebote je Abfrage
+  top_n: 3                   # Top-N guenstigste gefilterte Angebote je Kombi
   output_html: docs/index.html
