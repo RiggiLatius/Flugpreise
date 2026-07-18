@@ -71,7 +71,12 @@ def process_combo(cfg: Config, provider, combo: DateCombo, api_key: str) -> Quer
     offers: list[Offer] = []
 
     if cfg.verify_return_leg:
-        # Rückflug (Leg 2, CHC->FRA) nachladen und ebenfalls auf SIN/BKK filtern.
+        # Rückflug (Leg 2, CHC->FRA) für MEHRERE Hinflug-Kandidaten nachladen und
+        # ebenfalls auf SIN/BKK filtern. Wichtig: NICHT nach dem ersten Treffer
+        # abbrechen -- der billigste Hinflug (dessen Gesamtpreis einen evtl.
+        # Nicht-SIN/BKK-Rückflug unterstellt) ergibt nach dem SIN/BKK-Zwang nicht
+        # zwingend den günstigsten Gesamtpreis. Wir sammeln daher alle Varianten
+        # und wählen unten global den günstigsten.
         for cand in candidates[: cfg.drill_max_candidates]:
             token = entry_token(cand)
             if not token:
@@ -102,7 +107,6 @@ def process_combo(cfg: Config, provider, combo: DateCombo, api_key: str) -> Quer
                         carbon_emissions_g=(r.get("carbon_emissions") or {}).get("this_flight"),
                     )
                 )
-            break  # gültige Rückflüge gefunden -> nicht weiter drillen (Budget schonen)
     else:
         # Ohne Rückflug-Verifikation: nur Hinflug-basierte Angebote (Gesamtpreis-Schätzung).
         priced = [c for c in candidates if entry_price(c) > 0]

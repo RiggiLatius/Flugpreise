@@ -39,20 +39,23 @@ search:
   currency: EUR
   hl: de
   gl: de
-  deep_search: false
+  deep_search: true        # genauere, an die Google-Flights-Oberflaeche angeglichene Preise
 
 filter:
   # HINWEIS: Die erlaubten Umsteigeflughaefen (SIN/BKK) sind bewusst hart im
   # Code verankert (flugpreise/filters.py) und NICHT hier konfigurierbar.
   require_layover: true      # echte Direktfluege (ohne Umstieg) verwerfen
   verify_return_leg: true    # Rueckflug-Leg CHC->FRA ebenfalls hart auf SIN/BKK
-                             # pruefen (Drill-down, kostet je Kombi einen 2. Request)
-  drill_max_candidates: 2    # max. Hinflug-Kandidaten, fuer die der Rueckflug
-                             # nachgeladen wird, bis ein gueltiger SIN/BKK-Rueckflug gefunden ist
+                             # pruefen (Drill-down, kostet je Kombi zusaetzliche Requests)
+  drill_max_candidates: 3    # so viele Hinflug-Kandidaten werden mit Rueckflug
+                             # durchgerechnet; aus ALLEN wird der guenstigste gueltige
+                             # Gesamtpreis gewaehlt (mehr = genauer, aber mehr Requests)
 
 budget:
   monthly_max_requests: 95   # harte Obergrenze/Monat unter dem SerpApi-Free-Tier (100)
-  searches_per_run: 2        # Datumskombinationen pro Lauf ("seltener, breiter")
+  searches_per_run: 1        # Datumskombinationen pro Lauf. Genauigkeit vor Breite:
+                             # jede Kombi rechnet jetzt mehrere Rueckflug-Kandidaten
+                             # durch (1 + drill_max_candidates Requests), daher 1/Lauf.
 
 schedule:
   max_jitter_minutes: 20     # zufaellige Wartezeit vor der Abfrage (Zeit-Variation)
