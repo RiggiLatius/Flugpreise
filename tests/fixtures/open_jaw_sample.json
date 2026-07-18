@@ -3,6 +3,18 @@
     "best_flights": [
       {
         "flights": [
+          {"departure_airport": {"id": "FRA", "name": "Frankfurt", "time": "2027-01-19 20:00"},
+           "arrival_airport": {"id": "SIN", "name": "Singapore Changi", "time": "2027-01-20 15:00"},
+           "duration": 720, "airline": "Singapore Airlines", "flight_number": "SQ 27", "travel_class": "Business Class"},
+          {"departure_airport": {"id": "SIN", "name": "Singapore Changi", "time": "2027-01-20 19:00"},
+           "arrival_airport": {"id": "MEL", "name": "Melbourne", "time": "2027-01-21 05:30"},
+           "duration": 440, "airline": "Singapore Airlines", "flight_number": "SQ 231", "travel_class": "Business Class"}
+        ],
+        "layovers": [{"duration": 240, "name": "Singapore Changi", "id": "SIN"}],
+        "total_duration": 1400, "price": 1500, "type": "Multi-city", "departure_token": "tok_sq_biz"
+      },
+      {
+        "flights": [
           {"departure_airport": {"id": "FRA", "name": "Frankfurt", "time": "2027-01-19 22:05"},
            "arrival_airport": {"id": "SIN", "name": "Singapore Changi", "time": "2027-01-20 16:40"},
            "duration": 725, "airline": "Singapore Airlines", "flight_number": "SQ 325", "travel_class": "Economy"},

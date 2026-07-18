@@ -77,6 +77,38 @@ def flight_passes(flight: dict, *, require_layover: bool = True) -> bool:
     )
 
 
+# --------------------------------------------------------------------------
+# Harter Kabinenklassen-Filter
+#
+# SerpApi/Google-Flights hält sich bei Multi-City nicht immer an travel_class
+# und mischt teurere Segmente (z. B. Business) in ein Angebot. Damit Preise
+# fair vergleichbar bleiben (Projektauftrag: nur Economy), wird jede
+# Kabinenklasse programmatisch nachgeprüft: ALLE Segmente eines Angebots müssen
+# der gewünschten Klasse entsprechen, sonst wird es verworfen.
+# --------------------------------------------------------------------------
+
+_CABIN_LABEL = {
+    "economy": "economy",
+    "premium_economy": "premium economy",
+    "business": "business",
+    "first": "first",
+}
+
+
+def normalize_cabin(value: str | None) -> str:
+    """Normalisiert eine Kabinenklassen-Bezeichnung ('Business Class' -> 'business')."""
+    return (value or "").strip().lower().replace(" class", "")
+
+
+def cabin_ok(flight: dict, expected_travel_class: str) -> bool:
+    """True, wenn ALLE Segmente des Angebots in der erwarteten Kabinenklasse sind."""
+    expected = _CABIN_LABEL.get(expected_travel_class, "economy")
+    segments = flight.get("flights", []) or []
+    if not segments:
+        return False
+    return all(normalize_cabin(s.get("travel_class")) == expected for s in segments)
+
+
 def filter_flights(
     flights: Iterable[dict], *, require_layover: bool = True
 ) -> list[dict]:

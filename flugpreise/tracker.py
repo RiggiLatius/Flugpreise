@@ -23,7 +23,7 @@ import time
 from . import storage
 from .config import Config, load_config
 from .dates import date_in_window
-from .filters import flight_passes
+from .filters import cabin_ok, flight_passes
 from .grid import DateCombo
 from .models import Offer, QueryResult
 from .parse import (
@@ -62,8 +62,12 @@ def process_combo(cfg: Config, provider, combo: DateCombo, api_key: str) -> Quer
     data1 = provider.search_leg1(params)
     entries = collect_flight_entries(data1)
 
-    # --- HARTER FILTER Leg 1 (FRA->MEL): nur SIN/BKK ---------------------
-    hub_ok = [e for e in entries if flight_passes(e, require_layover=cfg.require_layover)]
+    # --- HARTE FILTER Leg 1 (FRA->MEL): nur SIN/BKK + nur Economy ---------
+    hub_ok = [
+        e for e in entries
+        if flight_passes(e, require_layover=cfg.require_layover)
+        and cabin_ok(e, cfg.travel_class)
+    ]
     # --- Post-Filter: MEL-Ankunft im Fenster -----------------------------
     candidates = [e for e in hub_ok if _arrival_in_window(e, cfg)]
     candidates.sort(key=entry_price)
@@ -86,6 +90,7 @@ def process_combo(cfg: Config, provider, combo: DateCombo, api_key: str) -> Quer
             ret_ok = [
                 e for e in ret_entries
                 if flight_passes(e, require_layover=cfg.require_layover)
+                and cabin_ok(e, cfg.travel_class)  # nur Economy
                 and entry_price(e) > 0  # Angebote ohne Preisangabe verwerfen
             ]
             if not ret_ok:

@@ -23,8 +23,9 @@ def test_leg1_hub_and_arrival_window_filter(tmp_path):
     assert len(results) == 1
     r = results[0]
     # Kandidaten nach Filter: SQ(SIN, Ankunft 21.01.) und TG(BKK, 22.01.).
-    # Emirates(DXB) faellt am Hub-Filter, Scoot(01.03.) am Ankunftsfenster.
-    assert r.total_results == 4
+    # Emirates(DXB) faellt am Hub-Filter, Scoot(01.03.) am Ankunftsfenster,
+    # der (billigere) SQ-Business-Flug am Kabinenfilter.
+    assert r.total_results == 5
     assert r.filtered_results == 2
 
 
@@ -45,6 +46,12 @@ def test_return_leg_is_also_hub_filtered(tmp_path):
     # Angebote ohne Preisangabe (price fehlt in der API-Antwort) muessen
     # verworfen werden -- kein 0-EUR-Angebot darf durchrutschen.
     assert all(o.price and o.price > 0 for o in offers)
+    # Der billigere (1500 EUR) Business-Class-Hinflug darf NICHT auftauchen --
+    # nur reine Economy-Angebote zaehlen.
+    assert all(o.price != 1500 for o in offers)
+    for o in offers:
+        for seg in o.outbound.segments + (o.return_leg.segments if o.return_leg else []):
+            assert (seg.travel_class or "").lower().startswith("economy")
 
 
 def test_storage_and_best_per_combo(tmp_path):

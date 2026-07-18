@@ -5,6 +5,7 @@ from pathlib import Path
 
 from flugpreise.filters import (
     ALLOWED_LAYOVER_AIRPORTS,
+    cabin_ok,
     filter_flights,
     flight_passes,
     is_allowed,
@@ -59,6 +60,17 @@ def test_layover_codes_fallback_from_segments():
     }
     # letzter Ankunftsflughafen (Ziel) zählt nicht als Zwischenstopp
     assert layover_codes_from_flight(entry) == ["SIN"]
+
+
+def test_cabin_filter_requires_all_segments_economy():
+    all_eco = {"flights": [
+        {"travel_class": "Economy"}, {"travel_class": "Economy"}]}
+    mixed = {"flights": [
+        {"travel_class": "Business Class"}, {"travel_class": "Economy"}]}
+    assert cabin_ok(all_eco, "economy") is True
+    assert cabin_ok(mixed, "economy") is False          # ein Business-Segment reicht
+    assert cabin_ok(all_eco, "business") is False
+    assert cabin_ok({"flights": []}, "economy") is False  # ohne Segmente ungueltig
 
 
 def test_fixture_filtering_excludes_cheaper_wrong_hubs():
