@@ -1,0 +1,59 @@
+name: Flugpreis-Tracker FRA-MEL
+
+on:
+  # 2-3x täglich zu unterschiedlichen Uhrzeiten (UTC!).
+  # Berlin = UTC+1 (Winter) / UTC+2 (Sommer). Die Minutenwerte sind bewusst
+  # ungleich :00 gewählt; zusätzlich variiert das Skript die Zeit per Jitter.
+  schedule:
+    - cron: "11 5 * * *"    # ~06:11 / 07:11 Berlin  (Vormittag)
+    - cron: "3 10 * * *"    # ~11:03 / 12:03 Berlin  (Mittag)
+    - cron: "27 17 * * *"   # ~18:27 / 19:27 Berlin  (Abend)
+  workflow_dispatch:
+    inputs:
+      no_jitter:
+        description: "Zufällige Wartezeit überspringen (sofort abfragen)"
+        type: boolean
+        default: true
+
+concurrency:
+  group: flugpreise-tracker
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  track:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Abhängigkeiten installieren
+        run: pip install -r requirements.txt
+
+      - name: Flugpreise abfragen und speichern
+        env:
+          SERPAPI_KEY: ${{ secrets.SERPAPI_KEY }}
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.no_jitter }}" = "true" ]; then
+            python -m flugpreise.tracker --no-jitter
+          else
+            python -m flugpreise.tracker
+          fi
+
+      - name: Ergebnisse committen
+        run: |
+          git config user.name  "flugpreise-bot"
+          git config user.email "actions@github.com"
+          git add data/flugpreise.db docs/index.html
+          if git diff --staged --quiet; then
+            echo "Keine Änderungen zu committen."
+          else
+            git commit -m "chore: Flugpreis-Abfrage $(date -u +'%Y-%m-%d %H:%M UTC')"
+            git push
+          fi

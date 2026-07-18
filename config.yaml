@@ -1,0 +1,44 @@
+# Konfiguration des Flugpreis-Trackers FRA -> MEL
+# Bitte outbound_date / return_date auf eure realen Reisedaten anpassen.
+
+route:
+  departure_id: FRA        # Frankfurt
+  arrival_id: MEL          # Melbourne
+
+trip:
+  type: round_trip         # round_trip | one_way
+  outbound_date: "2026-12-10"
+  return_date: "2026-12-29"
+
+passengers:
+  adults: 2
+  children: 0
+  infants_in_seat: 0
+  infants_on_lap: 1        # 1 Jahr altes Kleinkind auf dem Schoss
+
+cabin:
+  travel_class: economy    # economy | premium_economy | business | first
+
+search:
+  currency: EUR
+  hl: de                   # Sprache
+  gl: de                   # Land
+  deep_search: false       # true = genauere (langsamere) Google-Flights-Suche
+
+filter:
+  # HINWEIS: Die erlaubten Umsteigeflughäfen (SIN/BKK) sind bewusst hart im
+  # Code verankert (flugpreise/filters.py) und NICHT hier konfigurierbar,
+  # damit der Filter nicht umgangen werden kann.
+  require_layover: true    # true = echte Direktflüge (ohne Umstieg) verwerfen
+  verify_return_leg: false # true = bei Round-Trip auch den Rückflug auf SIN/BKK
+                           #        prüfen (kostet zusätzliche SerpApi-Requests!)
+
+schedule:
+  max_jitter_minutes: 20   # zufällige Wartezeit vor der Abfrage (Zeit-Variation)
+
+storage:
+  db_path: data/flugpreise.db
+
+report:
+  top_n: 3                 # Top-N günstigste gefilterte Angebote je Abfrage
+  output_html: docs/index.html

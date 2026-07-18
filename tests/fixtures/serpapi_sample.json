@@ -1,0 +1,117 @@
+{
+  "search_metadata": {"status": "Success"},
+  "best_flights": [
+    {
+      "flights": [
+        {
+          "departure_airport": {"id": "FRA", "name": "Frankfurt", "time": "2026-12-10 22:05"},
+          "arrival_airport": {"id": "SIN", "name": "Singapore Changi", "time": "2026-12-11 16:40"},
+          "duration": 725, "airline": "Singapore Airlines", "flight_number": "SQ 325",
+          "travel_class": "Economy", "airplane": "Airbus A350"
+        },
+        {
+          "departure_airport": {"id": "SIN", "name": "Singapore Changi", "time": "2026-12-11 20:10"},
+          "arrival_airport": {"id": "MEL", "name": "Melbourne", "time": "2026-12-12 06:35"},
+          "duration": 445, "airline": "Singapore Airlines", "flight_number": "SQ 237",
+          "travel_class": "Economy", "airplane": "Airbus A380"
+        }
+      ],
+      "layovers": [{"duration": 210, "name": "Singapore Changi", "id": "SIN"}],
+      "total_duration": 1380,
+      "carbon_emissions": {"this_flight": 2140000},
+      "price": 1980,
+      "type": "Round trip",
+      "booking_token": "tok_sq_sin"
+    },
+    {
+      "flights": [
+        {
+          "departure_airport": {"id": "FRA", "name": "Frankfurt", "time": "2026-12-10 14:10"},
+          "arrival_airport": {"id": "DXB", "name": "Dubai", "time": "2026-12-10 23:05"},
+          "duration": 355, "airline": "Emirates", "flight_number": "EK 46",
+          "travel_class": "Economy", "airplane": "Boeing 777"
+        },
+        {
+          "departure_airport": {"id": "DXB", "name": "Dubai", "time": "2026-12-11 02:50"},
+          "arrival_airport": {"id": "MEL", "name": "Melbourne", "time": "2026-12-11 22:05"},
+          "duration": 815, "airline": "Emirates", "flight_number": "EK 406",
+          "travel_class": "Economy", "airplane": "Airbus A380"
+        }
+      ],
+      "layovers": [{"duration": 225, "name": "Dubai", "id": "DXB"}],
+      "total_duration": 1435,
+      "carbon_emissions": {"this_flight": 2260000},
+      "price": 1750,
+      "type": "Round trip",
+      "booking_token": "tok_ek_dxb"
+    }
+  ],
+  "other_flights": [
+    {
+      "flights": [
+        {
+          "departure_airport": {"id": "FRA", "name": "Frankfurt", "time": "2026-12-10 13:25"},
+          "arrival_airport": {"id": "BKK", "name": "Bangkok Suvarnabhumi", "time": "2026-12-11 05:35"},
+          "duration": 610, "airline": "Thai Airways", "flight_number": "TG 923",
+          "travel_class": "Economy", "airplane": "Boeing 777"
+        },
+        {
+          "departure_airport": {"id": "BKK", "name": "Bangkok Suvarnabhumi", "time": "2026-12-11 08:10"},
+          "arrival_airport": {"id": "MEL", "name": "Melbourne", "time": "2026-12-11 20:25"},
+          "duration": 555, "airline": "Thai Airways", "flight_number": "TG 465",
+          "travel_class": "Economy", "airplane": "Boeing 787"
+        }
+      ],
+      "layovers": [{"duration": 155, "name": "Bangkok Suvarnabhumi", "id": "BKK"}],
+      "total_duration": 1320,
+      "carbon_emissions": {"this_flight": 2050000},
+      "price": 2090,
+      "type": "Round trip",
+      "booking_token": "tok_tg_bkk"
+    },
+    {
+      "flights": [
+        {
+          "departure_airport": {"id": "FRA", "name": "Frankfurt", "time": "2026-12-10 15:40"},
+          "arrival_airport": {"id": "DOH", "name": "Doha", "time": "2026-12-11 00:20"},
+          "duration": 340, "airline": "Qatar Airways", "flight_number": "QR 68",
+          "travel_class": "Economy", "airplane": "Boeing 777"
+        },
+        {
+          "departure_airport": {"id": "DOH", "name": "Doha", "time": "2026-12-11 02:05"},
+          "arrival_airport": {"id": "MEL", "name": "Melbourne", "time": "2026-12-11 21:45"},
+          "duration": 830, "airline": "Qatar Airways", "flight_number": "QR 904",
+          "travel_class": "Economy", "airplane": "Boeing 777"
+        }
+      ],
+      "layovers": [{"duration": 105, "name": "Doha", "id": "DOH"}],
+      "total_duration": 1445,
+      "carbon_emissions": {"this_flight": 2210000},
+      "price": 1690,
+      "type": "Round trip",
+      "booking_token": "tok_qr_doh"
+    },
+    {
+      "flights": [
+        {
+          "departure_airport": {"id": "FRA", "name": "Frankfurt", "time": "2026-12-10 21:15"},
+          "arrival_airport": {"id": "SIN", "name": "Singapore Changi", "time": "2026-12-11 16:05"},
+          "duration": 710, "airline": "Scoot", "flight_number": "TR 735",
+          "travel_class": "Economy", "airplane": "Boeing 787"
+        },
+        {
+          "departure_airport": {"id": "SIN", "name": "Singapore Changi", "time": "2026-12-11 19:30"},
+          "arrival_airport": {"id": "MEL", "name": "Melbourne", "time": "2026-12-12 06:05"},
+          "duration": 455, "airline": "Scoot", "flight_number": "TR 18",
+          "travel_class": "Economy", "airplane": "Boeing 787"
+        }
+      ],
+      "layovers": [{"duration": 205, "name": "Singapore Changi", "id": "SIN"}],
+      "total_duration": 1370,
+      "carbon_emissions": {"this_flight": 1980000},
+      "price": 1620,
+      "type": "Round trip",
+      "booking_token": "tok_tr_sin"
+    }
+  ]
+}
