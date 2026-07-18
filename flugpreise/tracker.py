@@ -81,9 +81,10 @@ def process_combo(cfg: Config, provider, combo: DateCombo, api_key: str) -> Quer
             ret_ok = [
                 e for e in ret_entries
                 if flight_passes(e, require_layover=cfg.require_layover)
+                and entry_price(e) > 0  # Angebote ohne Preisangabe verwerfen
             ]
             if not ret_ok:
-                _log("    Kein SIN/BKK-Rückflug für diesen Hinflug-Kandidaten.")
+                _log("    Kein (bepreister) SIN/BKK-Rückflug für diesen Hinflug-Kandidaten.")
                 continue
             ret_ok.sort(key=entry_price)
             out_leg = leg_from_entry(cand)
@@ -104,7 +105,8 @@ def process_combo(cfg: Config, provider, combo: DateCombo, api_key: str) -> Quer
             break  # gültige Rückflüge gefunden -> nicht weiter drillen (Budget schonen)
     else:
         # Ohne Rückflug-Verifikation: nur Hinflug-basierte Angebote (Gesamtpreis-Schätzung).
-        for e in candidates[: cfg.top_n]:
+        priced = [c for c in candidates if entry_price(c) > 0]
+        for e in priced[: cfg.top_n]:
             out_leg = leg_from_entry(e)
             offers.append(
                 Offer(
@@ -119,7 +121,11 @@ def process_combo(cfg: Config, provider, combo: DateCombo, api_key: str) -> Quer
                 )
             )
 
-    offers.sort(key=lambda o: o.price or float("inf"))
+    # Sicherheitsnetz: Angebote ohne gültigen Preis (z. B. fehlendes price-Feld
+    # in der API-Antwort) verwerfen, damit sie die Top-N/Best-Preis-Auswertung
+    # nicht verfälschen.
+    offers = [o for o in offers if o.price and o.price > 0]
+    offers.sort(key=lambda o: o.price)
     offers = offers[: cfg.top_n]
 
     return QueryResult(

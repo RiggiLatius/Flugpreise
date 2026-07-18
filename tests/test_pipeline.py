@@ -42,6 +42,9 @@ def test_return_leg_is_also_hub_filtered(tmp_path):
         assert set(o.return_leg.layover_airports).issubset({"SIN", "BKK"})
     # Der 2980-EUR-Rueckflug ueber SYD/DXB darf nicht auftauchen.
     assert all(o.price != 2980 for o in offers)
+    # Angebote ohne Preisangabe (price fehlt in der API-Antwort) muessen
+    # verworfen werden -- kein 0-EUR-Angebot darf durchrutschen.
+    assert all(o.price and o.price > 0 for o in offers)
 
 
 def test_storage_and_best_per_combo(tmp_path):

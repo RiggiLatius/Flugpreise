@@ -182,6 +182,7 @@ def latest_offers(conn: sqlite3.Connection, limit_queries: int = 60) -> list[sql
         FROM offers o
         JOIN queries q ON q.id = o.query_id
         WHERE q.id IN (SELECT id FROM queries ORDER BY id DESC LIMIT ?)
+          AND o.price > 0
         ORDER BY q.id DESC, o.rank ASC
         """,
         (limit_queries,),
@@ -198,6 +199,7 @@ def best_per_combo(conn: sqlite3.Connection) -> list[sqlite3.Row]:
                q.queried_at_utc AS cheapest_seen_at
         FROM offers o
         JOIN queries q ON q.id = o.query_id
+        WHERE o.price > 0
         GROUP BY q.target_arrival, q.stay_days
         ORDER BY best_price ASC
         """

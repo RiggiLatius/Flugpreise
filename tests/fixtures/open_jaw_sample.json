@@ -96,6 +96,18 @@
           ],
           "layovers": [{"duration": 330, "name": "Singapore Changi", "id": "SIN"}],
           "total_duration": 1770, "price": 3450, "type": "Multi-city", "booking_token": "book_sq_sin_b"
+        },
+        {
+          "flights": [
+            {"departure_airport": {"id": "CHC", "name": "Christchurch", "time": "2027-02-08 22:05"},
+             "arrival_airport": {"id": "SIN", "name": "Singapore Changi", "time": "2027-02-09 05:40"},
+             "duration": 635, "airline": "Singapore Airlines", "flight_number": "SQ 294", "travel_class": "Economy"},
+            {"departure_airport": {"id": "SIN", "name": "Singapore Changi", "time": "2027-02-09 11:10"},
+             "arrival_airport": {"id": "FRA", "name": "Frankfurt", "time": "2027-02-09 18:35"},
+             "duration": 805, "airline": "Singapore Airlines", "flight_number": "SQ 326", "travel_class": "Economy"}
+          ],
+          "layovers": [{"duration": 330, "name": "Singapore Changi", "id": "SIN"}],
+          "total_duration": 1770, "type": "Multi-city", "booking_token": "book_sq_sin_noprice"
         }
       ]
     }
