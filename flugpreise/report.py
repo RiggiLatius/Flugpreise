@@ -13,7 +13,7 @@ from pathlib import Path
 
 from . import storage
 from .config import Config
-from .filters import ALLOWED_LAYOVER_AIRPORTS
+from .filters import EXCLUDED_LAYOVER_AIRPORTS
 from .normalize import INFANT_NOTE
 
 
@@ -66,7 +66,7 @@ def _best_combo_section(conn: sqlite3.Connection) -> str:
 
 def build_html(conn: sqlite3.Connection, cfg: Config) -> str:
     generated = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
-    hubs = " / ".join(sorted(ALLOWED_LAYOVER_AIRPORTS))
+    hubs = "beliebige Hubs außer Naher Osten/Istanbul & visumpflichtige"
     rows = storage.latest_offers(conn, limit_queries=60)
 
     # nach Abfrage gruppieren (neueste zuerst)
@@ -176,15 +176,15 @@ def build_html(conn: sqlite3.Connection, cfg: Config) -> str:
 <header class="top">
   <h1>Flugpreise FRA → MEL … CHC → FRA (Open-Jaw)</h1>
   <div class="submeta">{passengers} · MEL-Ankunft {window} · Aufenthalt {stays} Tage</div>
-  <span class="badge">Harter Filter aktiv: nur Umstieg über {_esc(hubs)} (Hin- & Rückflug)</span>
+  <span class="badge">Umstieg über {_esc(hubs)} — Economy, Hin- & Rückflug</span>
 </header>
 <main>
   {body}
 </main>
 <footer>
   <p>Zuletzt aktualisiert: {generated}. Preise sind Gesamtpreise der Open-Jaw-Kombination
-     (Hinflug FRA→MEL + Rückflug CHC→FRA). „verif. ✓" = Rückflug wurde ebenfalls hart auf
-     {_esc(hubs)} geprüft.</p>
+     (Hinflug FRA→MEL + Rückflug CHC→FRA). „verif. ✓" = Rückflug wurde ebenfalls auf
+     zulässige Umsteige-Hubs ({_esc(hubs)}) geprüft.</p>
   <p>{INFANT_NOTE} Gepäckangaben sind normalisierte Orientierungswerte je Airline.
      Der Flug MEL→CHC wird separat gebucht und hier nicht getrackt.</p>
 </footer>

@@ -1,27 +1,59 @@
-"""Harter, nicht umgehbarer Zwischenstopp-Filter.
+"""Zwischenstopp-Filter (Ausschluss-Logik).
 
-Regel (nicht verhandelbar, siehe Projektauftrag):
-    Ein Angebot ist NUR gültig, wenn ausschließlich Singapur (SIN) oder
-    Bangkok (BKK) als Umsteigeflughafen genutzt werden.
-    Jedes Angebot mit einem anderen Zwischenstopp wird verworfen -- egal wie
-    günstig es ist. Direktflüge über andere Hubs zählen nicht.
+Regel (aktualisiert auf Wunsch des Nutzers):
+    Grundsätzlich sind ALLE Umsteigeflughäfen erlaubt -- auch wenn sie günstiger
+    sind -- MIT AUSNAHME von:
+      1. der Region Naher Osten (Middle East) sowie Istanbul, und
+      2. Flughäfen, für die (deutscher Pass) ein Transit-/Visum nötig ist.
 
-Dieser Filter wird bewusst PROGRAMMATISCH auf die Segment-/Layover-Daten der
-API-Antwort angewendet und nicht als Suchparameter an die API übergeben
-(die Google-Flights-/Amadeus-APIs bieten keinen "nur über Hub X"-Parameter).
+    Ein Angebot wird verworfen, sobald AUCH NUR EIN Zwischenstopp in einer der
+    beiden Ausschlusslisten liegt.
 
-Die erlaubten Flughäfen stehen absichtlich als Modul-Konstante hier im Code und
-werden NICHT aus der Konfiguration gelesen, damit der Filter nicht über eine
-config.yaml o.ä. aufgeweicht oder umgangen werden kann.
+Der Filter wird bewusst PROGRAMMATISCH auf die Segment-/Layover-Daten der
+API-Antwort angewendet (nicht als Suchparameter).
+
+WICHTIG zur Visum-Liste: Ob für einen Transit ein Visum nötig ist, lässt sich
+NICHT zuverlässig aus den Flugdaten ableiten. ``VISA_TRANSIT_REQUIRED`` ist
+daher eine gepflegte Best-Effort-Liste (deutscher Reisepass) und sollte im
+Zweifel selbst geprüft/angepasst werden.
 """
 
 from __future__ import annotations
 
 from typing import Iterable
 
-#: Ausschliesslich diese Flughäfen sind als Zwischenstopp zulässig.
-#: Bewusst hart im Code -- nicht konfigurierbar.
-ALLOWED_LAYOVER_AIRPORTS: "frozenset[str]" = frozenset({"SIN", "BKK"})
+#: Naher Osten + Istanbul -- als Zwischenstopp ausgeschlossen.
+MIDDLE_EAST_ISTANBUL: "frozenset[str]" = frozenset({
+    # Golfregion / Arabische Halbinsel
+    "DXB", "DWC", "AUH", "SHJ", "RKT", "DOH", "RUH", "JED", "MED", "DMM",
+    "KWI", "BAH", "MCT", "SLL",
+    # Levante / weiterer Naher Osten
+    "AMM", "BEY", "DAM", "TLV", "BGW", "BSR", "EBL", "ISU",
+    # Iran
+    "IKA", "THR", "MHD", "SYZ",
+    # Türkei (Istanbul)
+    "IST", "SAW",
+    # Ägypten (MENA-Region)
+    "CAI",
+})
+
+#: Flughäfen/Länder, für die (deutscher Pass) i.d.R. ein Transit-/Visum nötig
+#: ist bzw. dessen Notwendigkeit unklar ist -> ausgeschlossen.
+#: BEST-EFFORT, bitte selbst verifizieren und bei Bedarf anpassen.
+VISA_TRANSIT_REQUIRED: "frozenset[str]" = frozenset({
+    # USA (ESTA/Visum auch für reinen Transit)
+    "JFK", "EWR", "LAX", "SFO", "ORD", "IAD", "DFW", "ATL", "SEA", "BOS", "MIA", "IAH",
+    # Festland-China (visafreier Transit nur bedingt/zeitlich begrenzt)
+    "PEK", "PKX", "PVG", "SHA", "CAN", "SZX", "CTU", "CKG", "XIY", "HGH", "WUH",
+    "KMG", "NKG",
+    # Indien (kein regulärer visafreier internationaler Transit)
+    "DEL", "BOM", "MAA", "BLR", "HYD", "CCU", "COK", "AMD",
+    # Russland
+    "SVO", "DME", "VKO", "LED",
+})
+
+#: Vereinigte Ausschlussmenge -- ein Zwischenstopp hier => Angebot verworfen.
+EXCLUDED_LAYOVER_AIRPORTS: "frozenset[str]" = MIDDLE_EAST_ISTANBUL | VISA_TRANSIT_REQUIRED
 
 
 def layover_codes_from_flight(flight: dict) -> list[str]:
@@ -54,23 +86,23 @@ def layover_codes_from_flight(flight: dict) -> list[str]:
 def is_allowed(layover_codes: Iterable[str], *, require_layover: bool = True) -> bool:
     """Prüft, ob eine Menge von Zwischenstopp-Codes zulässig ist.
 
-    Zulässig genau dann, wenn *alle* Zwischenstopps in
-    :data:`ALLOWED_LAYOVER_AIRPORTS` liegen.
+    Zulässig genau dann, wenn *kein* Zwischenstopp in
+    :data:`EXCLUDED_LAYOVER_AIRPORTS` liegt (Naher Osten + Istanbul sowie
+    visumpflichtige Transit-Flughäfen).
 
     ``require_layover=True`` (Standard) verwirft zusätzlich Angebote ganz ohne
-    Zwischenstopp (echte Direktflüge), da für FRA->MEL zwingend über SIN oder
-    BKK umgestiegen werden soll.
+    Zwischenstopp (echte Direktflüge FRA->MEL existieren praktisch nicht).
     """
     codes = [c.strip().upper() for c in layover_codes if c and c.strip()]
 
     if require_layover and not codes:
         return False
 
-    return all(code in ALLOWED_LAYOVER_AIRPORTS for code in codes)
+    return all(code not in EXCLUDED_LAYOVER_AIRPORTS for code in codes)
 
 
 def flight_passes(flight: dict, *, require_layover: bool = True) -> bool:
-    """Wendet den harten Filter auf ein einzelnes SerpApi-Flugobjekt an."""
+    """Wendet den Zwischenstopp-Filter auf ein einzelnes SerpApi-Flugobjekt an."""
     return is_allowed(
         layover_codes_from_flight(flight),
         require_layover=require_layover,

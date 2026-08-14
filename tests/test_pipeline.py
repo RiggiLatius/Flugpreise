@@ -36,12 +36,13 @@ def test_return_leg_is_also_hub_filtered(tmp_path):
     # Guenstigster gueltiger Rueckflug via SIN = 3120; der billigere DXB-Rueckflug
     # (2980) muss trotz niedrigerem Preis ausgeschlossen sein.
     assert offers[0].price == 3120
+    from flugpreise.filters import EXCLUDED_LAYOVER_AIRPORTS
     for o in offers:
         assert o.return_verified is True
-        assert set(o.outbound.layover_airports).issubset({"SIN", "BKK"})
         assert o.return_leg is not None
-        assert set(o.return_leg.layover_airports).issubset({"SIN", "BKK"})
-    # Der 2980-EUR-Rueckflug ueber SYD/DXB darf nicht auftauchen.
+        for hub in o.outbound.layover_airports + o.return_leg.layover_airports:
+            assert hub not in EXCLUDED_LAYOVER_AIRPORTS
+    # Der 2980-EUR-Rueckflug ueber SYD/DXB darf nicht auftauchen (DXB = Naher Osten).
     assert all(o.price != 2980 for o in offers)
     # Angebote ohne Preisangabe (price fehlt in der API-Antwort) muessen
     # verworfen werden -- kein 0-EUR-Angebot darf durchrutschen.

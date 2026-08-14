@@ -8,25 +8,27 @@ Umsteigeflughafen filtert und die besten Angebote protokolliert.
 - **Passagiere:** 2 Erwachsene + 1 Kleinkind (Infant on lap), **Economy**
 - **Ankunft in Melbourne:** flexibel im Fenster **20.01.–07.02.2027**
 - **Aufenthalt:** **2,5–3,5 Wochen** (konfigurierbar, Standard 18 / 21 / 25 Tage)
-- **Harte Bedingung (nicht verhandelbar):** Umstieg **ausschließlich über Singapur (SIN)
-  oder Bangkok (BKK)** – auf **beiden** Legs. Jedes andere Angebot wird verworfen.
+- **Zwischenstopp-Regel:** grundsätzlich **alle Hubs erlaubt** (auch günstigere), **außer**
+  Naher Osten + Istanbul und **visumpflichtige** Transit-Flughäfen. Nur **Economy**, beide Legs.
 - **Betrieb:** komplett kostenlos (SerpApi Free-Tier + GitHub Actions + SQLite + GitHub Pages)
 
 > Der Trans-Tasman-Flug **MEL → CHC** wird separat gebucht und hier bewusst **nicht** getrackt.
 
 ---
 
-## Der harte SIN/BKK-Filter
+## Zwischenstopp-Filter (Ausschluss-Logik)
 
-Die zentrale Regel ist so implementiert, dass sie **nicht umgangen werden kann**:
+Ein Angebot wird verworfen, sobald **ein** Zwischenstopp in einer der Ausschlusslisten liegt:
 
-- Die erlaubten Flughäfen (`{"SIN", "BKK"}`) stehen als Konstante direkt im Code
-  (`flugpreise/filters.py`, `ALLOWED_LAYOVER_AIRPORTS`) und werden **nicht** aus der Config gelesen.
-- Der Filter läuft **programmatisch nach** der API-Antwort auf den Segment-/Layover-Daten.
-- Ein Leg besteht den Filter nur, wenn **alle** Zwischenstopps in `{SIN, BKK}` liegen.
-- Er wird auf **beide** Legs angewandt: Hinflug (FRA→MEL) und – über den Drill-down – auch
-  Rückflug (CHC→FRA). Tests beweisen, dass selbst *günstigere* Angebote über falsche Hubs
-  (DXB/DOH/SYD) zuverlässig ausgeschlossen werden.
+- **`MIDDLE_EAST_ISTANBUL`** – Naher Osten (DXB, DOH, AUH, RUH, JED, TLV, IKA …) + Istanbul (IST, SAW).
+- **`VISA_TRANSIT_REQUIRED`** – Transit-Hubs, für die (deutscher Pass) i. d. R. ein Visum nötig
+  ist bzw. dessen Notwendigkeit unklar ist (USA, Festland-China, Indien, Russland).
+  **Best-Effort-Liste** – Visaregeln lassen sich nicht aus Flugdaten ableiten, bitte selbst prüfen.
+
+Beide Listen stehen in `flugpreise/filters.py` und lassen sich dort anpassen. Der Filter läuft
+**programmatisch nach** der API-Antwort auf den Segment-/Layover-Daten und wird auf **beide** Legs
+angewandt (Hinflug FRA→MEL und – über den Drill-down – Rückflug CHC→FRA). Zusätzlich greift ein
+harter **Economy-Filter** (alle Segmente müssen Economy sein).
 
 ---
 

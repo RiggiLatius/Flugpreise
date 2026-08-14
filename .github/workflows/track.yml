@@ -1,11 +1,12 @@
 name: Flugpreis-Tracker Open-Jaw FRA-MEL / CHC-FRA
 
 on:
-  # "Seltener, breiter": 1x taeglich, dafuer mehrere Datumskombinationen pro Lauf
-  # (budget.searches_per_run in config.yaml). Uhrzeit variiert zusaetzlich per Jitter.
-  # Der Budget-Waechter in der DB begrenzt die SerpApi-Requests hart auf < 100/Monat.
-  schedule:
-    - cron: "17 8 * * *"    # ~09:17 / 10:17 Berlin
+  # TAEGLICHE ABFRAGE DEAKTIVIERT (auf Wunsch). Zum Wieder-Aktivieren einfach
+  # den folgenden schedule-Block wieder einkommentieren.
+  # schedule:
+  #   - cron: "17 8 * * *"    # ~09:17 / 10:17 Berlin
+  #
+  # Der Tracker laeuft nur noch manuell ueber "Run workflow" (workflow_dispatch).
   workflow_dispatch:
     inputs:
       no_jitter:

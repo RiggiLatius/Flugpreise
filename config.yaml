@@ -42,11 +42,13 @@ search:
   deep_search: true        # genauere, an die Google-Flights-Oberflaeche angeglichene Preise
 
 filter:
-  # HINWEIS: Die erlaubten Umsteigeflughaefen (SIN/BKK) sind bewusst hart im
-  # Code verankert (flugpreise/filters.py) und NICHT hier konfigurierbar.
+  # HINWEIS: Zwischenstopps sind grundsaetzlich ueberall erlaubt, AUSSER Naher
+  # Osten/Istanbul und visumpflichtige Transit-Hubs. Die Ausschlusslisten stehen
+  # in flugpreise/filters.py (MIDDLE_EAST_ISTANBUL / VISA_TRANSIT_REQUIRED) und
+  # koennen dort angepasst werden.
   require_layover: true      # echte Direktfluege (ohne Umstieg) verwerfen
-  verify_return_leg: true    # Rueckflug-Leg CHC->FRA ebenfalls hart auf SIN/BKK
-                             # pruefen (Drill-down, kostet je Kombi zusaetzliche Requests)
+  verify_return_leg: true    # Rueckflug-Leg CHC->FRA ebenfalls filtern
+                             # (Drill-down, kostet je Kombi zusaetzliche Requests)
   drill_max_candidates: 3    # so viele Hinflug-Kandidaten werden mit Rueckflug
                              # durchgerechnet; aus ALLEN wird der guenstigste gueltige
                              # Gesamtpreis gewaehlt (mehr = genauer, aber mehr Requests)
